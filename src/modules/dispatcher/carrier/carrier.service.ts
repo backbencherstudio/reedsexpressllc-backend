@@ -1,19 +1,304 @@
 import { Injectable } from '@nestjs/common';
 import { CreateCarrierDto } from './dto/create-carrier.dto';
 import { UpdateCarrierDto } from './dto/update-carrier.dto';
+import { PrismaService } from '../../../prisma/prisma.service';
+import appConfig from '../../../config/app.config';
+import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
+import { StringHelper } from '../../../common/helper/string.helper';
 
 @Injectable()
 export class CarrierService {
-  create(createCarrierDto: CreateCarrierDto) {
-    return 'This action adds a new carrier';
+  constructor(private prisma: PrismaService) {}
+
+  async create(
+    requesterUserId: string,
+    createCarrierDto: CreateCarrierDto,
+    logo?: Express.Multer.File,
+  ) {
+    try {
+      const {
+        legal_name,
+        dba_name,
+        mc_number,
+        dot_number,
+        address,
+        contact,
+        email,
+        pricing_plan_id,
+      } = createCarrierDto as any;
+
+      // validate requester
+      if (!requesterUserId) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const requester = await this.prisma.user.findUnique({
+        where: { id: requesterUserId },
+        select: { id: true, type: true },
+      });
+
+      if (!requester) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      // if requester is DISPATCHER, bind carrier to their dispatcher profile
+      let dispatcherId: string | null = null;
+      if (requester.type === 'DISPATCHER') {
+        const dispatcher = await this.prisma.dispatcher.findFirst({
+          where: { user_id: requesterUserId },
+        });
+        if (!dispatcher) {
+          return {
+            success: false,
+            message: 'Dispatcher profile not found for requester',
+          };
+        }
+        dispatcherId = dispatcher.id;
+      }
+
+      const data: any = {
+        legal_name,
+        dba_name: dba_name ?? null,
+        mc_number: mc_number ?? null,
+        dot_number: dot_number ?? null,
+        address: address ?? null,
+        contact: contact ?? null,
+        email: email ?? null,
+        logo: null,
+        pricing_plan_id: pricing_plan_id ?? null,
+      };
+
+      // handle logo file upload (same pattern as organization-admin)
+      if (logo && logo.buffer) {
+        const logoFileName = `${StringHelper.randomString()}${logo.originalname}`;
+        await SojebStorage.put(
+          appConfig().storageUrl.websiteInfo + logoFileName,
+          logo.buffer,
+        );
+        data.logo = logoFileName;
+      }
+
+      // ensure dispatcher_id is set when requester is dispatcher
+      if (dispatcherId) {
+        data.dispatcher_id = dispatcherId;
+      }
+
+      const created = await this.prisma.carrier.create({
+        data,
+      });
+
+      return {
+        success: true,
+        message: 'Carrier created successfully',
+        data: created,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
-  findAll() {
-    return `This action returns all carrier`;
+  async findAll(requesterUserId: string, query?: any) {
+    try {
+      if (!requesterUserId) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const requester = await this.prisma.user.findUnique({
+        where: { id: requesterUserId },
+        select: { id: true, type: true },
+      });
+
+      if (!requester) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const page = query && query.page ? Number(query.page) : 1;
+      const limit = query ? Number(query.limit ?? 20) : 20;
+      const search = query && query.search ? String(query.search).trim() : null;
+
+      const where: any = { deleted_at: null };
+
+      // search filter
+      if (search) {
+        where.AND = where.AND || [];
+        where.AND.push({
+          legal_name: { contains: search, mode: 'insensitive' },
+        });
+      }
+
+      // scope: DISPATCHER sees only their own carriers, ADMIN/SUPERADMIN see all
+      if (requester.type === 'DISPATCHER') {
+        const dispatcher = await this.prisma.dispatcher.findFirst({
+          where: { user_id: requesterUserId },
+        });
+        if (!dispatcher) {
+          return {
+            success: false,
+            message: 'Dispatcher profile not found for requester',
+          };
+        }
+        where.dispatcher_id = dispatcher.id;
+      }
+
+      const total = await this.prisma.carrier.count({ where });
+
+      const carriers = await this.prisma.carrier.findMany({
+        where,
+        include: {
+          pricing_plan: {
+            select: {
+              id: true,
+              plan_name: true,
+            },
+          },
+        },
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+      });
+
+      const results = carriers.map((c) => {
+        const record: any = {
+          id: c.id,
+          legal_name: c.legal_name,
+          dba_name: c.dba_name,
+          mc_number: c.mc_number,
+          dot_number: c.dot_number,
+          address: c.address,
+          contact: c.contact,
+          email: c.email,
+          logo: c.logo,
+          dispatcher_id: c.dispatcher_id,
+          pricing_plan_id: c.pricing_plan_id,
+          pricing_plan: c.pricing_plan,
+          created_at: c.created_at,
+          updated_at: c.updated_at,
+        };
+        if (c.logo) {
+          record.logo_url = SojebStorage.url(
+            appConfig().storageUrl.websiteInfo + c.logo,
+          );
+        }
+        return record;
+      });
+
+      const totalPage = limit > 0 ? Math.ceil(total / limit) : 0;
+      return {
+        success: true,
+        data: results,
+        meta: { page, limit, total, totalPage },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} carrier`;
+  async findOne(requesterUserId: string, carrierId: string) {
+    try {
+      if (!requesterUserId) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const requester = await this.prisma.user.findUnique({
+        where: { id: requesterUserId },
+        select: { id: true, type: true },
+      });
+
+      if (!requester) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const carrier = await this.prisma.carrier.findUnique({
+        where: { id: carrierId },
+        include: {
+          documents: {
+            where: { deleted_at: null },
+            orderBy: { created_at: 'desc' },
+          },
+          pricing_plan: {
+            select: {
+              id: true,
+              plan_name: true,
+            },
+          },
+        },
+      });
+
+      if (!carrier) {
+        return { success: false, message: 'Carrier not found' };
+      }
+
+      // scope check: DISPATCHER can only view their own carriers
+      if (requester.type === 'DISPATCHER') {
+        const dispatcher = await this.prisma.dispatcher.findFirst({
+          where: { user_id: requesterUserId },
+        });
+        if (!dispatcher || carrier.dispatcher_id !== dispatcher.id) {
+          return {
+            success: false,
+            message: 'You can only view your own carriers',
+          };
+        }
+      }
+
+      // map documents with file URLs
+      const documents = carrier.documents.map((doc: any) => {
+        const docRecord: any = {
+          id: doc.id,
+          name: doc.name,
+          type: doc.type,
+          status: doc.status,
+          notes: doc.notes,
+          approved_at: doc.approved_at,
+          approved_by: doc.approved_by,
+          created_at: doc.created_at,
+          updated_at: doc.updated_at,
+        };
+        if (doc.file) {
+          docRecord.file_url = SojebStorage.url(
+            appConfig().storageUrl.websiteInfo + doc.file,
+          );
+        }
+        return docRecord;
+      });
+
+      const record: any = {
+        id: carrier.id,
+        legal_name: carrier.legal_name,
+        dba_name: carrier.dba_name,
+        mc_number: carrier.mc_number,
+        dot_number: carrier.dot_number,
+        address: carrier.address,
+        contact: carrier.contact,
+        email: carrier.email,
+        logo: carrier.logo,
+        dispatcher_id: carrier.dispatcher_id,
+        pricing_plan_id: carrier.pricing_plan_id,
+        pricing_plan: carrier.pricing_plan,
+        documents,
+        created_at: carrier.created_at,
+        updated_at: carrier.updated_at,
+      };
+
+      if (carrier.logo) {
+        record.logo_url = SojebStorage.url(
+          appConfig().storageUrl.websiteInfo + carrier.logo,
+        );
+      }
+
+      return { success: true, data: record };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
   update(id: number, updateCarrierDto: UpdateCarrierDto) {
