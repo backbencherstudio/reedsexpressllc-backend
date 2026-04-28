@@ -420,7 +420,8 @@ export class DispatcherService {
 
       if (
         !requester ||
-        (requester.type !== UserType.ADMIN && requester.type !== UserType.SUPER_ADMIN)
+        (requester.type !== UserType.ADMIN &&
+          requester.type !== UserType.SUPER_ADMIN)
       ) {
         return { success: false, message: 'Access denied' };
       }
@@ -452,7 +453,10 @@ export class DispatcherService {
           return { success: false, message: 'Admin profile not found' };
         }
 
-        if (!carrier.dispatcher || carrier.dispatcher.admin_id !== requester.admin.id) {
+        if (
+          !carrier.dispatcher ||
+          carrier.dispatcher.admin_id !== requester.admin.id
+        ) {
           return { success: false, message: 'Carrier not found' };
         }
       }
@@ -477,9 +481,8 @@ export class DispatcherService {
               id: carrier.pricing_plan.id,
               plan_name: carrier.pricing_plan.plan_name,
               description: carrier.pricing_plan.description,
-              dispatcher_fee: carrier.pricing_plan.dispatcher_fee?.toString() ?? null,
-              use_default_dispatcher_fee:
-                carrier.pricing_plan.use_default_dispatcher_fee,
+              dispatcher_fee:
+                carrier.pricing_plan.dispatcher_fee?.toString() ?? null,
               billing_cycle: carrier.pricing_plan.billing_cycle,
               billing_day: carrier.pricing_plan.billing_day,
               is_active: carrier.pricing_plan.is_active,

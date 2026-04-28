@@ -17,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { MailModule } from './mail/mail.module';
 import { ApplicationModule } from './modules/application/application.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { CarrierModule } from './modules/dispatcher/carrier/carrier.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { AdminModule } from './modules/admin/admin.module';
     MailModule,
     ApplicationModule,
     AdminModule,
+    CarrierModule,
   ],
   controllers: [AppController],
   providers: [

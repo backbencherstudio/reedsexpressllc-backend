@@ -538,9 +538,8 @@ model PricingPlan {
   plan_name                  String
   description                String?
   dispatcher_fee             Decimal?     @db.Decimal(5, 2)
-  use_default_dispatcher_fee Boolean      @default(true)
-  billing_cycle              BillingCycle @default(MONTHLY)
-  billing_day                Weekday?
+  billing_cycle              BillingCycle @default(WEEKLY)
+  billing_day                Int? // e.g. day of week for weekly, day of month for monthly billing
   is_active                  Boolean      @default(true)
 
   admin_id String?
@@ -571,6 +570,7 @@ model Feature {
   id         String   @id @default(cuid())
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+  deleted_at DateTime?
 
   name        String
   description String?

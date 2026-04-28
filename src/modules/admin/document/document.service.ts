@@ -1,13 +1,132 @@
 import { Injectable } from '@nestjs/common';
-import { UserType } from '@prisma/client';
+import { DocumentStatus, UserType } from '@prisma/client';
 import appConfig from '../../../config/app.config';
 import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ListDocumentQueryDto } from './dto/list-document-query.dto';
+import { ReviewDocumentDto } from './dto/review-document.dto';
 
 @Injectable()
 export class DocumentService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async reviewDocument(
+    requesterUserId: string,
+    documentId: string,
+    reviewDocumentDto: ReviewDocumentDto,
+  ) {
+    try {
+      if (!requesterUserId) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const requester = await this.prisma.user.findUnique({
+        where: { id: requesterUserId },
+        include: { admin: true },
+      });
+
+      if (
+        !requester ||
+        (requester.type !== UserType.ADMIN &&
+          requester.type !== UserType.SUPER_ADMIN)
+      ) {
+        return { success: false, message: 'Access denied' };
+      }
+
+      const document = await this.prisma.document.findFirst({
+        where: {
+          id: documentId,
+          deleted_at: null,
+        },
+        include: {
+          carrier: {
+            select: {
+              dispatcher: {
+                select: { admin_id: true },
+              },
+            },
+          },
+          driver: {
+            select: {
+              carrier: {
+                select: {
+                  dispatcher: {
+                    select: { admin_id: true },
+                  },
+                },
+              },
+            },
+          },
+          load: {
+            select: {
+              dispatcher: {
+                select: { admin_id: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!document) {
+        return { success: false, message: 'Document not found' };
+      }
+
+      if (requester.type === UserType.ADMIN) {
+        if (!requester.admin) {
+          return { success: false, message: 'Admin profile not found' };
+        }
+
+        const adminId = requester.admin.id;
+        const belongsToAdmin =
+          document.carrier?.dispatcher?.admin_id === adminId ||
+          document.driver?.carrier?.dispatcher?.admin_id === adminId ||
+          document.load?.dispatcher?.admin_id === adminId;
+
+        if (!belongsToAdmin) {
+          return { success: false, message: 'Document not found' };
+        }
+      }
+
+      const targetStatus =
+        reviewDocumentDto.action === 'approve'
+          ? DocumentStatus.APPROVED
+          : DocumentStatus.REJECTED;
+
+      const updated = await this.prisma.document.update({
+        where: { id: documentId },
+        data: {
+          status: targetStatus,
+          notes: reviewDocumentDto.notes ?? document.notes,
+          approved_at:
+            targetStatus === DocumentStatus.APPROVED ? new Date() : null,
+          approved_by:
+            targetStatus === DocumentStatus.APPROVED ? requesterUserId : null,
+        },
+        select: {
+          id: true,
+          status: true,
+          approved_at: true,
+          approved_by: true,
+          notes: true,
+          updated_at: true,
+        },
+      });
+
+      return {
+        success: true,
+        message:
+          targetStatus === DocumentStatus.APPROVED
+            ? 'Document approved successfully'
+            : 'Document rejected successfully',
+        data: updated,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
 
   async findAll(requesterUserId: string, query?: ListDocumentQueryDto) {
     try {
