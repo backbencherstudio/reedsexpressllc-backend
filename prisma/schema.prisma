@@ -1,0 +1,720 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearchPostgres"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────
+
+enum UserType {
+  SUPER_ADMIN
+  ADMIN
+  DISPATCHER
+  DRIVER
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LoadStatus {
+  PENDING
+  ASSIGNED
+  IN_TRANSIT
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+}
+
+enum BillingCycle {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+// ─────────────────────────────────────────
+// User & Auth
+// ─────────────────────────────────────────
+
+model User {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  username      String?
+  email         String?    @unique
+  password      String?    @db.VarChar(255)
+  avatar        String?
+  phone_number  String?
+  date_of_birth DateTime?  @db.Date
+  type          UserType   @default(DRIVER)
+  status        UserStatus @default(PENDING)
+  availability  String? // e.g. "AVAILABLE", "UNAVAILABLE", "ON_LEAVE"
+  approved_at   DateTime?
+
+  email_verified_at     DateTime?
+  is_two_factor_enabled Int?      @default(0)
+  two_factor_secret     String?
+
+  // Profile relations
+  admin      Admin?
+  dispatcher Dispatcher?
+  driver     Driver?
+
+  // Messaging
+  creator_conversations     Conversation[] @relation("creator")
+  participant_conversations Conversation[] @relation("participant")
+  sender_messages           Message[]      @relation("sender")
+  receiver_messages         Message[]      @relation("receiver")
+
+  // Notifications
+  sender_notifications   Notification[] @relation("sender")
+  receiver_notifications Notification[] @relation("receiver")
+
+  ucodes Ucode[]
+
+  @@map("users")
+}
+
+model Ucode {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  user_id String?
+  user    User?   @relation(fields: [user_id], references: [id])
+
+  token      String?
+  email      String?
+  expired_at DateTime?
+  status     Int?      @default(1) @db.SmallInt
+
+  @@map("ucodes")
+}
+
+// ─────────────────────────────────────────
+// Admin & Hierarchy
+// ─────────────────────────────────────────
+
+model Admin {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  company_name     String
+  business_address String?
+  admin_name       String?
+  logo             String?
+  website          String?
+
+  user_id String @unique
+  user    User   @relation(fields: [user_id], references: [id])
+
+  dispatchers   Dispatcher[]
+  pricing_plans PricingPlan[]
+
+  @@map("admins")
+}
+
+model Dispatcher {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  full_name String
+  address   String?
+  notes     String?
+
+  user_id String @unique
+  user    User   @relation(fields: [user_id], references: [id])
+
+  admin_id String?
+  admin    Admin?  @relation(fields: [admin_id], references: [id])
+
+  carriers Carrier[]
+  loads    Load[]
+
+  @@map("dispatchers")
+}
+
+// ─────────────────────────────────────────
+// Carrier
+// ─────────────────────────────────────────
+
+model Carrier {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  // Company info
+  legal_name String
+  dba_name   String?
+  mc_number  String?
+  dot_number String?
+  address    String?
+  contact    String?
+  email      String?
+  logo       String?
+
+  dispatcher_id String?
+  dispatcher    Dispatcher? @relation(fields: [dispatcher_id], references: [id])
+
+  pricing_plan_id String?
+  pricing_plan    PricingPlan? @relation(fields: [pricing_plan_id], references: [id])
+
+  documents            Document[]
+  drivers              Driver[]
+  trucks               Truck[]
+  trailers             Trailer[]
+  loads                Load[]
+  invoices             Invoice[]
+  financial_statements FinancialStatement[]
+
+  @@map("carriers")
+}
+
+// ─────────────────────────────────────────
+// Driver
+// ─────────────────────────────────────────
+
+model Driver {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  full_name  String
+  contact    String?
+  license_no String?
+  address    String?
+
+  user_id String @unique
+  user    User   @relation(fields: [user_id], references: [id])
+
+  carrier_id String?
+  carrier    Carrier? @relation(fields: [carrier_id], references: [id])
+
+  documents            Document[]
+  loads                Load[]
+  financial_statements FinancialStatement[]
+
+  @@map("drivers")
+}
+
+// ─────────────────────────────────────────
+// Assets
+// ─────────────────────────────────────────
+
+model Truck {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  carrier_id String?
+  carrier    Carrier? @relation(fields: [carrier_id], references: [id])
+
+  license_plate String
+  truck_type    String?
+  make          String?
+  model         String?
+  year          Int?
+  vin           String?
+  unit_number   String?
+
+  loads Load[]
+
+  @@map("trucks")
+}
+
+model Trailer {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  carrier_id String?
+  carrier    Carrier? @relation(fields: [carrier_id], references: [id])
+
+  trailer_type String?
+  model        String?
+  plate_number String?
+  plate_state  String?
+  unit_number  String?
+
+  loads Load[]
+
+  @@map("trailers")
+}
+
+// ─────────────────────────────────────────
+// Document
+// ─────────────────────────────────────────
+
+model Document {
+  id          String    @id @default(cuid())
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  deleted_at  DateTime?
+  approved_at DateTime?
+  approved_by String?
+
+  name   String?
+  type   String? // e.g. "LICENSE", "INSURANCE", "BOL", "POD"
+  file   String?
+  status DocumentStatus @default(PENDING)
+  notes  String? // rejection reason or review note
+
+  carrier_id String?
+  carrier    Carrier? @relation(fields: [carrier_id], references: [id])
+
+  driver_id String?
+  driver    Driver? @relation(fields: [driver_id], references: [id])
+
+  load_id String?
+  load    Load?   @relation(fields: [load_id], references: [id])
+
+  @@map("documents")
+}
+
+// ─────────────────────────────────────────
+// Load
+// ─────────────────────────────────────────
+
+model Load {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  // Basic info
+  load_number       String  @unique
+  rate_confirmation String? // file URL
+
+  // Carrier
+  carrier_id String
+  carrier    Carrier @relation(fields: [carrier_id], references: [id])
+
+  // Broker
+  broker_name         String?
+  broker_reference_no String?
+  broker_email        String?
+  broker_phone        String?
+
+  // Pickup
+  pickup_company String
+  pickup_date    DateTime
+  pickup_time    String?
+  pickup_address String
+
+  // Delivery
+  delivery_company String
+  delivery_date    DateTime
+  delivery_time    String?
+  delivery_address String
+
+  // Assignment
+  dispatcher_id String
+  dispatcher    Dispatcher @relation(fields: [dispatcher_id], references: [id])
+
+  driver_id String?
+  driver    Driver? @relation(fields: [driver_id], references: [id])
+
+  truck_id String?
+  truck    Truck?  @relation(fields: [truck_id], references: [id])
+
+  trailer_id String?
+  trailer    Trailer? @relation(fields: [trailer_id], references: [id])
+
+  // Rate & Miles
+  rate_per_mile  Float?
+  total_miles    Int?
+  deadhead_miles Int?   @default(0)
+  loaded_miles   Int?   @default(0)
+  total_rate     Float? // rate_per_mile * total_miles
+
+  // Additional
+  commodity        String?
+  weight           Float?
+  additional_notes String?
+
+  // Status
+  status       LoadStatus @default(PENDING)
+  completed_at DateTime?
+
+  // Relations
+  documents       Document[]
+  invoice_loads   InvoiceLoad[]
+  statement_loads FinancialStatementLoad[]
+
+  @@index([load_number])
+  @@index([carrier_id])
+  @@index([dispatcher_id])
+  @@index([driver_id])
+  @@index([status])
+  @@map("loads")
+}
+
+// ─────────────────────────────────────────
+// Invoice & Financial
+// ─────────────────────────────────────────
+
+model Invoice {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  invoice_number String        @unique
+  status         InvoiceStatus @default(DRAFT)
+
+  // Invoice period used to select completed loads
+  start_date DateTime?
+  end_date   DateTime?
+
+  carrier_id String?
+  carrier    Carrier? @relation(fields: [carrier_id], references: [id])
+
+  // Snapshot values used for invoice calculation
+  selected_revenue     Float @default(0)
+  dispatch_fee_percent Float @default(0)
+  dispatch_fee_amount  Float @default(0)
+  total_due            Float @default(0)
+
+  invoice_loads InvoiceLoad[]
+
+  amount      Float
+  tax         Float?    @default(0)
+  total       Float // amount + tax
+  due_date    DateTime?
+  paid_at     DateTime?
+  notes       String?
+  notes_terms String?
+
+  @@index([invoice_number])
+  @@index([carrier_id])
+  @@index([status])
+  @@index([start_date])
+  @@index([end_date])
+  @@map("invoices")
+}
+
+model InvoiceLoad {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+
+  invoice_id String
+  invoice    Invoice @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+
+  load_id String
+  load    Load   @relation(fields: [load_id], references: [id])
+
+  // Snapshot so later load changes do not alter historical invoices
+  load_revenue_snapshot Float?
+
+  @@unique([invoice_id, load_id])
+  @@index([invoice_id])
+  @@index([load_id])
+  @@map("invoice_loads")
+}
+
+model FinancialStatement {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  statement_number String? @unique
+  title            String? @default("General Statement")
+
+  carrier_id String?
+  carrier    Carrier? @relation(fields: [carrier_id], references: [id])
+
+  driver_id String?
+  driver    Driver? @relation(fields: [driver_id], references: [id])
+
+  start_date DateTime
+  end_date   DateTime
+
+  // Snapshot totals for generated statement document
+  total_revenue        Float  @default(0)
+  total_loads          Int    @default(0)
+  total_miles          Int?   @default(0)
+  loaded_miles         Int?   @default(0)
+  deadhead_miles       Int?   @default(0)
+  avg_rate_per_mile    Float? @default(0)
+  dispatch_fee_percent Float  @default(0)
+  dispatch_fee_amount  Float  @default(0)
+  net_to_carrier       Float  @default(0)
+
+  report_file String?
+  notes       String?
+
+  statement_loads FinancialStatementLoad[]
+
+  @@index([carrier_id])
+  @@index([driver_id])
+  @@index([start_date])
+  @@index([end_date])
+  @@map("financial_statements")
+}
+
+model FinancialStatementLoad {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+
+  financial_statement_id String
+  financial_statement    FinancialStatement @relation(fields: [financial_statement_id], references: [id], onDelete: Cascade)
+
+  load_id String
+  load    Load   @relation(fields: [load_id], references: [id])
+
+  // Snapshot values for each selected load in a statement
+  rate_snapshot           Float?
+  loaded_miles_snapshot   Int?
+  deadhead_miles_snapshot Int?
+  route_snapshot          String?
+
+  @@unique([financial_statement_id, load_id])
+  @@index([financial_statement_id])
+  @@index([load_id])
+  @@map("financial_statement_loads")
+}
+
+// ─────────────────────────────────────────
+// Pricing Plan
+// ─────────────────────────────────────────
+
+model PricingPlan {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  plan_name                  String
+  description                String?
+  dispatcher_fee             Decimal?     @db.Decimal(5, 2)
+  use_default_dispatcher_fee Boolean      @default(true)
+  billing_cycle              BillingCycle @default(MONTHLY)
+  billing_day                Weekday?
+  is_active                  Boolean      @default(true)
+
+  admin_id String?
+  admin    Admin?  @relation(fields: [admin_id], references: [id])
+
+  included_features PlanFeature[]
+  carriers          Carrier[]
+
+  @@unique([admin_id, plan_name])
+  @@index([admin_id])
+  @@map("pricing_plans")
+}
+
+model PlanFeature {
+  id String @id @default(cuid())
+
+  pricing_plan_id String
+  pricing_plan    PricingPlan @relation(fields: [pricing_plan_id], references: [id])
+
+  feature_id String
+  feature    Feature @relation(fields: [feature_id], references: [id])
+
+  @@unique([pricing_plan_id, feature_id])
+  @@map("plan_features")
+}
+
+model Feature {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  name        String
+  description String?
+
+  plans PlanFeature[]
+
+  @@map("features")
+}
+
+// ─────────────────────────────────────────
+// Notifications
+// ─────────────────────────────────────────
+
+model NotificationEvent {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  type   String?
+  text   String?
+  status Int?    @default(1) @db.SmallInt
+
+  notifications Notification[]
+
+  @@map("notification_events")
+}
+
+model Notification {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  read_at DateTime?
+  status  Int?      @default(1) @db.SmallInt
+
+  sender_id String?
+  sender    User?   @relation("sender", fields: [sender_id], references: [id])
+
+  receiver_id String?
+  receiver    User?   @relation("receiver", fields: [receiver_id], references: [id])
+
+  notification_event_id String?
+  notification_event    NotificationEvent? @relation(fields: [notification_event_id], references: [id])
+
+  entity_id   String? // polymorphic: load id, document id, etc.
+  entity_type String? // "LOAD" | "DOCUMENT" | "INVOICE" etc.
+
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────
+// Chat
+// ─────────────────────────────────────────
+
+model Conversation {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  creator_id String?
+  creator    User?   @relation("creator", fields: [creator_id], references: [id])
+
+  participant_id String?
+  participant    User?   @relation("participant", fields: [participant_id], references: [id])
+
+  messages Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  status MessageStatus @default(PENDING)
+
+  sender_id String?
+  sender    User?   @relation("sender", fields: [sender_id], references: [id])
+
+  receiver_id String?
+  receiver    User?   @relation("receiver", fields: [receiver_id], references: [id])
+
+  conversation_id String?
+  conversation    Conversation? @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  attachment_id String?
+  attachment    Attachment? @relation(fields: [attachment_id], references: [id])
+
+  message String?
+
+  @@map("messages")
+}
+
+model Attachment {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  name     String?
+  type     String?
+  size     Int?
+  file     String?
+  file_alt String?
+
+  messages Message[]
+
+  @@map("attachments")
+}
+
+// ─────────────────────────────────────────
+// Misc
+// ─────────────────────────────────────────
+
+model Faq {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  question   String?
+  answer     String?
+  sort_order Int?    @default(0)
+  status     Int?    @default(1) @db.SmallInt
+
+  @@map("faqs")
+}
+
+model Contact {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  first_name   String?
+  last_name    String?
+  email        String?
+  phone_number String?
+  message      String?
+
+  @@map("contacts")
+}
