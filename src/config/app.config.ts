@@ -1,3 +1,5 @@
+import { log } from "console";
+
 export default () => ({
   app: {
     name: process.env.APP_NAME,
@@ -86,8 +88,9 @@ export default () => ({
     blog: '/blog',
     avatar: '/avatar',
     websiteInfo: '/website-info',
-    // chat
     attachment: '/attachment',
+    document: '/document',
+    logo: '/logo',
   },
 
   defaultUser: {

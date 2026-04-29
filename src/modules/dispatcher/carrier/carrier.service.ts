@@ -5,6 +5,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import appConfig from '../../../config/app.config';
 import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
 import { StringHelper } from '../../../common/helper/string.helper';
+import { CreateCarrierDocumentsFormDto } from './dto/create-carrier-documents-form.dto';
 
 @Injectable()
 export class CarrierService {
@@ -72,7 +73,7 @@ export class CarrierService {
       if (logo && logo.buffer) {
         const logoFileName = `${StringHelper.randomString()}${logo.originalname}`;
         await SojebStorage.put(
-          appConfig().storageUrl.websiteInfo + logoFileName,
+          appConfig().storageUrl.logo + logoFileName,
           logo.buffer,
         );
         data.logo = logoFileName;
@@ -179,7 +180,7 @@ export class CarrierService {
         };
         if (c.logo) {
           record.logo_url = SojebStorage.url(
-            appConfig().storageUrl.websiteInfo + c.logo,
+            appConfig().storageUrl.logo + c.logo,
           );
         }
         return record;
@@ -288,11 +289,131 @@ export class CarrierService {
 
       if (carrier.logo) {
         record.logo_url = SojebStorage.url(
-          appConfig().storageUrl.websiteInfo + carrier.logo,
+          appConfig().storageUrl.logo + carrier.logo,
         );
       }
 
       return { success: true, data: record };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  async submitDocuments(
+    requesterUserId: string,
+    carrierId: string,
+    files: Express.Multer.File[],
+    body?: CreateCarrierDocumentsFormDto,
+  ) {
+    try {
+      if (!requesterUserId) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const requester = await this.prisma.user.findUnique({
+        where: { id: requesterUserId },
+        select: { id: true, type: true },
+      });
+
+      if (!requester) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const carrier = await this.prisma.carrier.findUnique({
+        where: { id: carrierId },
+      });
+      if (!carrier) {
+        return { success: false, message: 'Carrier not found' };
+      }
+
+      if (requester.type === 'DISPATCHER') {
+        const dispatcher = await this.prisma.dispatcher.findFirst({
+          where: { user_id: requesterUserId },
+        });
+        if (!dispatcher || dispatcher.id !== carrier.dispatcher_id) {
+          return {
+            success: false,
+            message: 'You can only upload documents for your own carriers',
+          };
+        }
+      }
+
+      if (!files || files.length === 0) {
+        return { success: false, message: 'No files uploaded' };
+      }
+
+      // Parse metadata array from JSON string
+      let metadataArray: Array<{ type?: string; name?: string; notes?: string }> = [];
+      if (body?.metadata) {
+        try {
+          const parsed = JSON.parse(body.metadata as string);
+          if (Array.isArray(parsed)) {
+            metadataArray = parsed;
+          }
+        } catch (e) {
+          // ignore parse errors, metadata remains empty
+        }
+      }
+
+      // Validate: if metadata provided, must have same length as files
+      if (body?.metadata && metadataArray.length > 0 && metadataArray.length !== files.length) {
+        return {
+          success: false,
+          message: `Metadata array length (${metadataArray.length}) must match files count (${files.length})`,
+        };
+      }
+
+      const uploaded: Array<{
+        filename: string;
+        originalname: string;
+        meta?: { type?: string; name?: string; notes?: string };
+      }> = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const filename = `${StringHelper.randomString()}${f.originalname}`;
+        await SojebStorage.put(
+          appConfig().storageUrl.document + filename,
+          f.buffer,
+        );
+        // Get per-file metadata from array, or undefined if index doesn't exist
+        const fileMeta = metadataArray[i];
+        uploaded.push({ filename, originalname: f.originalname, meta: fileMeta });
+      }
+
+      const creates = uploaded.map((u) =>
+        this.prisma.document.create({
+          data: {
+            name: (u.meta && u.meta.name) ?? u.originalname,
+            type: (u.meta && u.meta.type) ?? null,
+            notes: (u.meta && u.meta.notes) ?? null,
+            file: u.filename,
+            carrier_id: carrierId,
+          },
+        }),
+      );
+
+      const created = await this.prisma.$transaction(creates);
+
+      const resp = created.map((d) => ({
+        id: d.id,
+        name: d.name,
+        file: d.file,
+        file_url: d.file
+          ? SojebStorage.url(appConfig().storageUrl.document + d.file)
+          : null,
+        status: d.status,
+        created_at: d.created_at,
+      }));
+
+      return {
+        success: true,
+        message: 'Documents uploaded successfully',
+        data: resp,
+      };
     } catch (error) {
       return {
         success: false,

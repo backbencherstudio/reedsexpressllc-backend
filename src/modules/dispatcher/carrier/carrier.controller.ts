@@ -9,6 +9,7 @@ import {
   Req,
   UseGuards,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
   Query,
 } from '@nestjs/common';
@@ -16,6 +17,8 @@ import { CarrierService } from './carrier.service';
 import { CreateCarrierDto } from './dto/create-carrier.dto';
 import { UpdateCarrierDto } from './dto/update-carrier.dto';
 import { ListCarrierQueryDto } from './dto/list-carrier-query.dto';
+import { CreateCarrierDocumentDto } from './dto/create-carrier-document.dto';
+import { CreateCarrierDocumentsFormDto } from './dto/create-carrier-documents-form.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guard/role/roles.guard';
 import { Roles } from '../../../common/guard/role/roles.decorator';
@@ -34,7 +37,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { Request } from 'express';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 
 @ApiBearerAuth('dispatcher-token')
@@ -44,7 +47,6 @@ import { memoryStorage } from 'multer';
 @Controller('carrier')
 export class CarrierController {
   constructor(private readonly carrierService: CarrierService) {}
-
   @ApiOperation({ summary: 'Create carrier (dispatcher/admin only)' })
   @ApiCreatedResponse({ description: 'Carrier created' })
   @ApiBadRequestResponse({ description: 'Bad request' })
@@ -65,6 +67,30 @@ export class CarrierController {
   ) {
     const requesterUserId = req.user.userId;
     return this.carrierService.create(requesterUserId, createCarrierDto, logo);
+  }
+
+  @ApiOperation({ summary: 'Upload multiple documents for a carrier' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: CreateCarrierDocumentsFormDto })
+  @Post(':id/documents')
+  @UseInterceptors(
+    FilesInterceptor('documents', 20, {
+      storage: memoryStorage(),
+    }),
+  )
+  async uploadDocuments(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @UploadedFiles() files?: Express.Multer.File[],
+    @Body() body?: CreateCarrierDocumentsFormDto,
+  ) {
+    const requesterUserId = req.user.userId;
+    return this.carrierService.submitDocuments(
+      requesterUserId,
+      id,
+      files || [],
+      body || {},
+    );
   }
 
   @ApiOperation({ summary: 'Get all carriers' })
