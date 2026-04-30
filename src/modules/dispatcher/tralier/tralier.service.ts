@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { CreateTruckDto } from './dto/create-truck.dto';
-import { UpdateTruckDto } from './dto/update-truck.dto';
+import { CreateTralierDto } from './dto/create-tralier.dto';
+import { UpdateTralierDto } from './dto/update-tralier.dto';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { CreateTruckTypeDto } from './dto/create-truck-type.dto';
-import { ListTruckQueryDto } from './dto/list-truck-query.dto';
+import { CreateTralierTypeDto } from './dto/create-tralier-type.dto';
+import { ListTralierQueryDto } from './dto/list-tralier-query.dto';
 
 @Injectable()
-export class TruckService {
+export class TralierService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createTruckType(requesterUserId: string, dto: CreateTruckTypeDto) {
+  async createTralierType(requesterUserId: string, dto: CreateTralierTypeDto) {
     try {
       if (!requesterUserId) {
         return { success: false, message: 'Unauthorized request' };
@@ -19,14 +19,23 @@ export class TruckService {
         where: { id: requesterUserId },
         select: { id: true, type: true },
       });
-      if (!requester)
-        return { success: false, message: 'Unauthorized request' };
 
-      const created = await this.prisma.truckType.create({
-        data: { name: dto.name, description: dto.description ?? null },
+      if (!requester) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const created = await this.prisma.trailerType.create({
+        data: {
+          name: dto.name,
+          description: dto.description ?? null,
+        },
       });
 
-      return { success: true, message: 'Truck type created', data: created };
+      return {
+        success: true,
+        message: 'Trailer type created successfully',
+        data: created,
+      };
     } catch (error) {
       return {
         success: false,
@@ -35,7 +44,36 @@ export class TruckService {
     }
   }
 
-  async create(requesterUserId: string, createTruckDto: CreateTruckDto) {
+  async getTralierTypes(requesterUserId: string) {
+    try {
+      if (!requesterUserId) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const requester = await this.prisma.user.findUnique({
+        where: { id: requesterUserId },
+        select: { id: true },
+      });
+
+      if (!requester) {
+        return { success: false, message: 'Unauthorized request' };
+      }
+
+      const types = await this.prisma.trailerType.findMany({
+        where: { deleted_at: null },
+        orderBy: { name: 'asc' },
+      });
+
+      return { success: true, data: types };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  async create(requesterUserId: string, createTralierDto: CreateTralierDto) {
     try {
       if (!requesterUserId) {
         return { success: false, message: 'Unauthorized request' };
@@ -51,7 +89,7 @@ export class TruckService {
       }
 
       const carrier = await this.prisma.carrier.findUnique({
-        where: { id: createTruckDto.carrier_id },
+        where: { id: createTralierDto.carrier_id },
         select: { id: true, dispatcher_id: true },
       });
 
@@ -62,44 +100,42 @@ export class TruckService {
       if (requester.type === 'DISPATCHER') {
         const dispatcher = await this.prisma.dispatcher.findFirst({
           where: { user_id: requesterUserId },
+          select: { id: true },
         });
 
         if (!dispatcher || dispatcher.id !== carrier.dispatcher_id) {
           return {
             success: false,
-            message: 'You can only create trucks for your own carriers',
+            message: 'You can only create trailers for your own carriers',
           };
         }
       }
 
-      // validate truck_type_id if provided to avoid FK constraint errors
-      let truckTypeId = createTruckDto.truck_type_id ?? null;
-      if (truckTypeId) {
-        const tt = await this.prisma.truckType.findFirst({
-          where: { id: truckTypeId, deleted_at: null },
+      if (createTralierDto.trailer_type_id) {
+        const trailerType = await this.prisma.trailerType.findFirst({
+          where: { id: createTralierDto.trailer_type_id, deleted_at: null },
           select: { id: true },
         });
-        if (!tt) {
-          return { success: false, message: 'Invalid truck_type_id' };
+
+        if (!trailerType) {
+          return { success: false, message: 'Invalid trailer_type_id' };
         }
       }
 
-      const created = await this.prisma.truck.create({
+      const created = await this.prisma.trailer.create({
         data: {
-          carrier_id: createTruckDto.carrier_id,
-          license_plate: createTruckDto.license_plate,
-          truck_type_id: createTruckDto.truck_type_id,
-          make: createTruckDto.make ?? null,
-          model: createTruckDto.model ?? null,
-          year: createTruckDto.year ?? null,
-          vin: createTruckDto.vin ?? null,
-          unit_number: createTruckDto.unit_number ?? null,
+          carrier_id: createTralierDto.carrier_id,
+          trailer_type_id: createTralierDto.trailer_type_id ?? null,
+          model: createTralierDto.model ?? null,
+          plate_number: createTralierDto.plate_number ?? null,
+          plate_state: createTralierDto.plate_state ?? null,
+          unit_number: createTralierDto.unit_number ?? null,
         },
       });
 
       return {
         success: true,
-        message: 'Truck created successfully',
+        message: 'Trailer created successfully',
         data: created,
       };
     } catch (error) {
@@ -110,31 +146,7 @@ export class TruckService {
     }
   }
 
-  async getTruckTypes(requesterUserId: string) {
-    try {
-      if (!requesterUserId)
-        return { success: false, message: 'Unauthorized request' };
-      const requester = await this.prisma.user.findUnique({
-        where: { id: requesterUserId },
-        select: { id: true },
-      });
-      if (!requester)
-        return { success: false, message: 'Unauthorized request' };
-
-      const types = await this.prisma.truckType.findMany({
-        where: { deleted_at: null },
-        orderBy: { name: 'asc' },
-      });
-      return { success: true, data: types };
-    } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-  }
-
-  async findAll(requesterUserId: string, query?: ListTruckQueryDto) {
+  async findAll(requesterUserId: string, query?: ListTralierQueryDto) {
     try {
       if (!requesterUserId) {
         return { success: false, message: 'Unauthorized request' };
@@ -144,6 +156,7 @@ export class TruckService {
         where: { id: requesterUserId },
         select: { id: true, type: true },
       });
+
       if (!requester) {
         return { success: false, message: 'Unauthorized request' };
       }
@@ -157,16 +170,16 @@ export class TruckService {
       if (query?.carrier_id) {
         where.carrier_id = query.carrier_id;
       }
-      if (query?.truck_type_id) {
-        where.truck_type_id = query.truck_type_id;
+
+      if (query?.trailer_type_id) {
+        where.trailer_type_id = query.trailer_type_id;
       }
 
       if (search) {
         where.OR = [
-          { license_plate: { contains: search, mode: 'insensitive' } },
-          { make: { contains: search, mode: 'insensitive' } },
+          { plate_number: { contains: search, mode: 'insensitive' } },
+          { plate_state: { contains: search, mode: 'insensitive' } },
           { model: { contains: search, mode: 'insensitive' } },
-          { vin: { contains: search, mode: 'insensitive' } },
           { unit_number: { contains: search, mode: 'insensitive' } },
         ];
       }
@@ -176,20 +189,23 @@ export class TruckService {
           where: { user_id: requesterUserId },
           select: { id: true },
         });
+
         if (!dispatcher) {
           return {
             success: false,
             message: 'Dispatcher profile not found for requester',
           };
         }
+
         where.carrier = { dispatcher_id: dispatcher.id };
       }
 
-      const total = await this.prisma.truck.count({ where });
-      const trucks = await this.prisma.truck.findMany({
+      const total = await this.prisma.trailer.count({ where });
+
+      const trailers = await this.prisma.trailer.findMany({
         where,
         include: {
-          truck_type: {
+          trailer_type: {
             select: { id: true, name: true },
           },
           carrier: {
@@ -210,24 +226,23 @@ export class TruckService {
         orderBy: { created_at: 'desc' },
       });
 
-      const data = trucks.map((truck) => ({
-        id: truck.id,
-        carrier_id: truck.carrier_id,
-        license_plate: truck.license_plate,
-        truck_type_id: truck.truck_type_id,
-        truck_type: truck.truck_type,
-        make: truck.make,
-        model: truck.model,
-        year: truck.year,
-        vin: truck.vin,
-        unit_number: truck.unit_number,
-        carrier: truck.carrier,
-        loads: truck.loads,
-        created_at: truck.created_at,
-        updated_at: truck.updated_at,
+      const data = trailers.map((trailer) => ({
+        id: trailer.id,
+        carrier_id: trailer.carrier_id,
+        trailer_type_id: trailer.trailer_type_id,
+        trailer_type: trailer.trailer_type,
+        model: trailer.model,
+        plate_number: trailer.plate_number,
+        plate_state: trailer.plate_state,
+        unit_number: trailer.unit_number,
+        carrier: trailer.carrier,
+        loads: trailer.loads,
+        created_at: trailer.created_at,
+        updated_at: trailer.updated_at,
       }));
 
       const totalPage = limit > 0 ? Math.ceil(total / limit) : 0;
+
       return {
         success: true,
         data,
@@ -241,7 +256,7 @@ export class TruckService {
     }
   }
 
-  async findOne(requesterUserId: string, truckId: string) {
+  async findOne(requesterUserId: string, tralierId: string) {
     try {
       if (!requesterUserId) {
         return { success: false, message: 'Unauthorized request' };
@@ -251,14 +266,15 @@ export class TruckService {
         where: { id: requesterUserId },
         select: { id: true, type: true },
       });
+
       if (!requester) {
         return { success: false, message: 'Unauthorized request' };
       }
 
-      const truck = await this.prisma.truck.findUnique({
-        where: { id: truckId },
+      const trailer = await this.prisma.trailer.findUnique({
+        where: { id: tralierId },
         include: {
-          truck_type: {
+          trailer_type: {
             select: { id: true, name: true, description: true },
           },
           carrier: {
@@ -276,8 +292,8 @@ export class TruckService {
         },
       });
 
-      if (!truck || truck.deleted_at) {
-        return { success: false, message: 'Truck not found' };
+      if (!trailer || trailer.deleted_at) {
+        return { success: false, message: 'Trailer not found' };
       }
 
       if (requester.type === 'DISPATCHER') {
@@ -286,10 +302,10 @@ export class TruckService {
           select: { id: true },
         });
 
-        if (!dispatcher || truck.carrier?.dispatcher_id !== dispatcher.id) {
+        if (!dispatcher || trailer.carrier?.dispatcher_id !== dispatcher.id) {
           return {
             success: false,
-            message: 'You can only view your own trucks',
+            message: 'You can only view your own trailers',
           };
         }
       }
@@ -297,20 +313,18 @@ export class TruckService {
       return {
         success: true,
         data: {
-          id: truck.id,
-          carrier_id: truck.carrier_id,
-          license_plate: truck.license_plate,
-          truck_type_id: truck.truck_type_id,
-          truck_type: truck.truck_type,
-          make: truck.make,
-          model: truck.model,
-          year: truck.year,
-          vin: truck.vin,
-          unit_number: truck.unit_number,
-          carrier: truck.carrier,
-          loads: truck.loads,
-          created_at: truck.created_at,
-          updated_at: truck.updated_at,
+          id: trailer.id,
+          carrier_id: trailer.carrier_id,
+          trailer_type_id: trailer.trailer_type_id,
+          trailer_type: trailer.trailer_type,
+          model: trailer.model,
+          plate_number: trailer.plate_number,
+          plate_state: trailer.plate_state,
+          unit_number: trailer.unit_number,
+          carrier: trailer.carrier,
+          loads: trailer.loads,
+          created_at: trailer.created_at,
+          updated_at: trailer.updated_at,
         },
       };
     } catch (error) {
@@ -323,8 +337,8 @@ export class TruckService {
 
   async update(
     requesterUserId: string,
-    truckId: string,
-    updateTruckDto: UpdateTruckDto,
+    tralierId: string,
+    updateTralierDto: UpdateTralierDto,
   ) {
     try {
       if (!requesterUserId) {
@@ -335,12 +349,13 @@ export class TruckService {
         where: { id: requesterUserId },
         select: { id: true, type: true },
       });
+
       if (!requester) {
         return { success: false, message: 'Unauthorized request' };
       }
 
-      const truck = await this.prisma.truck.findUnique({
-        where: { id: truckId },
+      const trailer = await this.prisma.trailer.findUnique({
+        where: { id: tralierId },
         include: {
           carrier: {
             select: { id: true, dispatcher_id: true },
@@ -348,8 +363,8 @@ export class TruckService {
         },
       });
 
-      if (!truck || truck.deleted_at) {
-        return { success: false, message: 'Truck not found' };
+      if (!trailer || trailer.deleted_at) {
+        return { success: false, message: 'Trailer not found' };
       }
 
       if (requester.type === 'DISPATCHER') {
@@ -358,19 +373,20 @@ export class TruckService {
           select: { id: true },
         });
 
-        if (!dispatcher || truck.carrier?.dispatcher_id !== dispatcher.id) {
+        if (!dispatcher || trailer.carrier?.dispatcher_id !== dispatcher.id) {
           return {
             success: false,
-            message: 'You can only update your own trucks',
+            message: 'You can only update your own trailers',
           };
         }
       }
 
       let targetCarrierId =
-        updateTruckDto.carrier_id ?? truck.carrier_id ?? null;
-      if (updateTruckDto.carrier_id) {
+        updateTralierDto.carrier_id ?? trailer.carrier_id ?? null;
+
+      if (updateTralierDto.carrier_id) {
         const carrier = await this.prisma.carrier.findUnique({
-          where: { id: updateTruckDto.carrier_id },
+          where: { id: updateTralierDto.carrier_id },
           select: { id: true, dispatcher_id: true },
         });
 
@@ -387,7 +403,7 @@ export class TruckService {
           if (!dispatcher || carrier.dispatcher_id !== dispatcher.id) {
             return {
               success: false,
-              message: 'You can only assign trucks to your own carriers',
+              message: 'You can only assign trailers to your own carriers',
             };
           }
         }
@@ -395,39 +411,35 @@ export class TruckService {
         targetCarrierId = carrier.id;
       }
 
-      if (updateTruckDto.truck_type_id) {
-        const tt = await this.prisma.truckType.findFirst({
-          where: { id: updateTruckDto.truck_type_id, deleted_at: null },
+      if (updateTralierDto.trailer_type_id) {
+        const trailerType = await this.prisma.trailerType.findFirst({
+          where: { id: updateTralierDto.trailer_type_id, deleted_at: null },
           select: { id: true },
         });
-        if (!tt) {
-          return { success: false, message: 'Invalid truck_type_id' };
+
+        if (!trailerType) {
+          return { success: false, message: 'Invalid trailer_type_id' };
         }
       }
 
-      const updated = await this.prisma.truck.update({
-        where: { id: truckId },
+      const updated = await this.prisma.trailer.update({
+        where: { id: tralierId },
         data: {
           carrier_id: targetCarrierId,
-          license_plate: updateTruckDto.license_plate ?? truck.license_plate,
-          truck_type_id:
-            updateTruckDto.truck_type_id !== undefined
-              ? updateTruckDto.truck_type_id
-              : truck.truck_type_id,
-          make: updateTruckDto.make ?? truck.make,
-          model: updateTruckDto.model ?? truck.model,
-          year:
-            updateTruckDto.year !== undefined
-              ? updateTruckDto.year
-              : truck.year,
-          vin: updateTruckDto.vin ?? truck.vin,
-          unit_number: updateTruckDto.unit_number ?? truck.unit_number,
+          trailer_type_id:
+            updateTralierDto.trailer_type_id !== undefined
+              ? updateTralierDto.trailer_type_id
+              : trailer.trailer_type_id,
+          model: updateTralierDto.model ?? trailer.model,
+          plate_number: updateTralierDto.plate_number ?? trailer.plate_number,
+          plate_state: updateTralierDto.plate_state ?? trailer.plate_state,
+          unit_number: updateTralierDto.unit_number ?? trailer.unit_number,
         },
       });
 
       return {
         success: true,
-        message: 'Truck updated successfully',
+        message: 'Trailer updated successfully',
         data: updated,
       };
     } catch (error) {
@@ -438,7 +450,7 @@ export class TruckService {
     }
   }
 
-  async remove(requesterUserId: string, truckId: string) {
+  async remove(requesterUserId: string, tralierId: string) {
     try {
       if (!requesterUserId) {
         return { success: false, message: 'Unauthorized request' };
@@ -448,12 +460,13 @@ export class TruckService {
         where: { id: requesterUserId },
         select: { id: true, type: true },
       });
+
       if (!requester) {
         return { success: false, message: 'Unauthorized request' };
       }
 
-      const truck = await this.prisma.truck.findUnique({
-        where: { id: truckId },
+      const trailer = await this.prisma.trailer.findUnique({
+        where: { id: tralierId },
         include: {
           carrier: {
             select: { id: true, dispatcher_id: true },
@@ -461,8 +474,8 @@ export class TruckService {
         },
       });
 
-      if (!truck || truck.deleted_at) {
-        return { success: false, message: 'Truck not found' };
+      if (!trailer || trailer.deleted_at) {
+        return { success: false, message: 'Trailer not found' };
       }
 
       if (requester.type === 'DISPATCHER') {
@@ -471,22 +484,22 @@ export class TruckService {
           select: { id: true },
         });
 
-        if (!dispatcher || truck.carrier?.dispatcher_id !== dispatcher.id) {
+        if (!dispatcher || trailer.carrier?.dispatcher_id !== dispatcher.id) {
           return {
             success: false,
-            message: 'You can only delete your own trucks',
+            message: 'You can only delete your own trailers',
           };
         }
       }
 
-      const deleted = await this.prisma.truck.update({
-        where: { id: truckId },
+      const deleted = await this.prisma.trailer.update({
+        where: { id: tralierId },
         data: { deleted_at: new Date() },
       });
 
       return {
         success: true,
-        message: 'Truck deleted successfully',
+        message: 'Trailer deleted successfully',
         data: deleted,
       };
     } catch (error) {
