@@ -259,7 +259,8 @@ model Truck {
   carrier    Carrier? @relation(fields: [carrier_id], references: [id])
 
   license_plate String
-  truck_type    String?
+  truck_type_id String?
+  truck_type    TruckType? @relation(fields: [truck_type_id], references: [id])
   make          String?
   model         String?
   year          Int?
@@ -271,20 +272,48 @@ model Truck {
   @@map("trucks")
 }
 
+model TruckType {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  name        String  @unique
+  description String?
+
+  trucks Truck[]
+
+  @@map("truck_types")
+}
+
+model TrailerType {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  name        String  @unique
+  description String?
+
+  trailers Trailer[]
+
+  @@map("trailer_types")
+}
+
 model Trailer {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  carrier_id String?
-  carrier    Carrier? @relation(fields: [carrier_id], references: [id])
-
-  trailer_type String?
-  model        String?
-  plate_number String?
-  plate_state  String?
-  unit_number  String?
+  carrier_id      String?
+  carrier         Carrier?     @relation(fields: [carrier_id], references: [id])
+  trailer_type_id String?
+  trailer_type    TrailerType? @relation(fields: [trailer_type_id], references: [id])
+  model           String?
+  plate_number    String?
+  plate_state     String?
+  unit_number     String?
 
   loads Load[]
 
@@ -535,12 +564,12 @@ model PricingPlan {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  plan_name                  String
-  description                String?
-  dispatcher_fee             Decimal?     @db.Decimal(5, 2)
-  billing_cycle              BillingCycle @default(WEEKLY)
-  billing_day                Int? // e.g. day of week for weekly, day of month for monthly billing
-  is_active                  Boolean      @default(true)
+  plan_name      String
+  description    String?
+  dispatcher_fee Decimal?     @db.Decimal(5, 2)
+  billing_cycle  BillingCycle @default(WEEKLY)
+  billing_day    Int? // e.g. day of week for weekly, day of month for monthly billing
+  is_active      Boolean      @default(true)
 
   admin_id String?
   admin    Admin?  @relation(fields: [admin_id], references: [id])
@@ -567,9 +596,9 @@ model PlanFeature {
 }
 
 model Feature {
-  id         String   @id @default(cuid())
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
   name        String

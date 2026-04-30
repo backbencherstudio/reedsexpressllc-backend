@@ -1,4 +1,4 @@
-import { log } from "console";
+import { log } from 'console';
 
 export default () => ({
   app: {

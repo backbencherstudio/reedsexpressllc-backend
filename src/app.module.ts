@@ -17,8 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { MailModule } from './mail/mail.module';
 import { ApplicationModule } from './modules/application/application.module';
 import { AdminModule } from './modules/admin/admin.module';
-import { CarrierModule } from './modules/dispatcher/carrier/carrier.module';
-import { TrukModule } from './modules/dispatcher/truk/truk.module';
+import { DispatcherModule } from './modules/dispatcher/dispatcher.module';
 
 @Module({
   imports: [
@@ -70,8 +69,7 @@ import { TrukModule } from './modules/dispatcher/truk/truk.module';
     MailModule,
     ApplicationModule,
     AdminModule,
-    CarrierModule,
-    TrukModule,
+    DispatcherModule,
   ],
   controllers: [AppController],
   providers: [

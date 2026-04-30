@@ -346,7 +346,11 @@ export class CarrierService {
       }
 
       // Parse metadata array from JSON string
-      let metadataArray: Array<{ type?: string; name?: string; notes?: string }> = [];
+      let metadataArray: Array<{
+        type?: string;
+        name?: string;
+        notes?: string;
+      }> = [];
       if (body?.metadata) {
         try {
           const parsed = JSON.parse(body.metadata as string);
@@ -359,7 +363,11 @@ export class CarrierService {
       }
 
       // Validate: if metadata provided, must have same length as files
-      if (body?.metadata && metadataArray.length > 0 && metadataArray.length !== files.length) {
+      if (
+        body?.metadata &&
+        metadataArray.length > 0 &&
+        metadataArray.length !== files.length
+      ) {
         return {
           success: false,
           message: `Metadata array length (${metadataArray.length}) must match files count (${files.length})`,
@@ -381,7 +389,11 @@ export class CarrierService {
         );
         // Get per-file metadata from array, or undefined if index doesn't exist
         const fileMeta = metadataArray[i];
-        uploaded.push({ filename, originalname: f.originalname, meta: fileMeta });
+        uploaded.push({
+          filename,
+          originalname: f.originalname,
+          meta: fileMeta,
+        });
       }
 
       const creates = uploaded.map((u) =>
